@@ -1,0 +1,796 @@
+        -:    0:Source:cloudcover.c
+        -:    0:Graph:cloudcover.gcno
+        -:    0:Data:cloudcover.gcda
+        -:    0:Runs:2
+        -:    0:Programs:1
+        -:    1:/**
+        -:    2: * @file cloudcover.c
+        -:    3: *
+        -:    4: * @author José Galaviz <jgc@fciencias.unam.mx>
+        -:    5: * @version 1.0
+        -:    6: * \date 9/Jun/2013 - 13:49
+        -:    7: *
+        -:    8: * Facultad de Ciencias,
+        -:    9: * Universidad Nacional Autónoma de México, México.
+        -:   10: *
+        -:   11: * @section LICENSE
+        -:   12: * This program is free software; you can redistribute it and/or
+        -:   13: * modify it under the terms of the GNU General Public License
+        -:   14: * as published by the Free Software Foundation; either version 2
+        -:   15: * of the License, or (at your option) any later version.
+        -:   16: *
+        -:   17: * This program is distributed in the hope that it will be useful,
+        -:   18: * but WITHOUT ANY WARRANTY; without even the implied warranty of
+        -:   19: * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+        -:   20: * GNU General Public License for more details.
+        -:   21: *
+        -:   22: * You should have received a copy of the GNU General Public License
+        -:   23: * along with this program; if not, visit the following URL:
+        -:   24: * (http://www.gnu.org/licenses/gpl.html)
+        -:   25: * or write to the Free Software Foundation, Inc.,
+        -:   26: * 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+        -:   27: *
+        -:   28: * @section DESCRIPTION
+        -:   29: * Main program for Clound Cover Index (CCI) calculation.
+        -:   30: *
+        -:   31: */
+        -:   32:#define _GNU_SOURCE
+        -:   33:#include<stdio.h>
+        -:   34:#include<sys/stat.h>
+        -:   35:#include<string.h>
+        -:   36:#include<stdlib.h>
+        -:   37:#include<unistd.h>
+        -:   38:#include<ctype.h>
+        -:   39:#include<expat.h>
+        -:   40:#include"imageio.h"
+        -:   41:#include"geoinfo.h"
+        -:   42:#include"imageinfo.h"
+        -:   43:#include"timedate.h"
+        -:   44:#include"cloudcover.h"
+        -:   45:
+        -:   46:/* Command line input params */
+        -:   47:
+        -:   48:/* Image input filename */
+        -:   49:char              *infname;
+        -:   50:
+        -:   51:/* Configuration XML filename */
+        -:   52:char              *cffname;
+        -:   53:
+        -:   54:/* Trimmed image filename */
+        -:   55:char              *trfname;
+        -:   56:
+        -:   57:/* Segmented image filename */
+        -:   58:char              *sgfname;
+        -:   59:
+        -:   60:/* Input params in config file */
+        -:   61:struct cfgparams {
+        -:   62:   /* Red/Blue treshold: r/b pix ratio < treshold -> sky */
+        -:   63:   double            rbtreshold;
+        -:   64:   /* Neightborhood size in the convolution process */
+        -:   65:   int               neighbsize;
+        -:   66:   /* Number of votes needed to flip the pixel classification */
+        -:   67:   int               votes2flip;
+        -:   68:   /* Name for the mask file */
+        -:   69:   char              msfname[MAXFNLEN];
+        -:   70:   /* Name for the geolocation file */
+        -:   71:   char              glfname[MAXFNLEN];
+        -:   72:   /* Azimuth for the camera orientation */
+        -:   73:   double            azimuth;
+        -:   74:} cfgvals;
+        -:   75:
+        -:   76:/* Geographic information read from the geoinfo file */
+        -:   77:double            latitude;
+        -:   78:double            longitude;
+        -:   79:double            elevation;
+        -:   80:char              timezn[TZLEN];
+        -:   81:
+        -:   82:/* Image data */
+        -:   83:int               width, height;
+        -:   84:unsigned int      **image = NULL;
+        -:   85:unsigned int      **imageseg = NULL;
+        -:   86:unsigned int      **imagecnv = NULL;
+        -:   87:
+        -:   88:/* Output data */
+        -:   89:int               year;
+        -:   90:int               month;
+        -:   91:int               day;
+        -:   92:int               hour;
+        -:   93:int               minute;
+        -:   94:int               sec;
+        -:   95:
+        -:   96:double            jdn;
+        -:   97:/*
+        -:   98:int               juldate;
+        -:   99:double            julfrac;
+        -:  100:*/
+        -:  101:
+        -:  102:double            ccindex;
+        -:  103:
+        -:  104:/* Auxiliary variables used by XML parser */
+        -:  105:char             *valores[6];
+        -:  106:int               reading, idxrd;
+        -:  107:
+        -:  108:GeoInfo        locinfo;
+        -:  109:ImageInfo      imginfo;
+        -:  110:CamAndShotInfo phinfo;
+        -:  111:
+        -:  112:/**
+        -:  113: * \brief Set the default values for the configuration variables.
+        -:  114: * This function access the global variables where such parameters are
+        -:  115: * stored.
+        -:  116: */
+        -:  117:void
+        2:  118:setDefaults() {
+        -:  119:   int               i;
+        -:  120:
+        2:  121:   infname = cffname = sgfname = trfname = NULL;
+      514:  122:   for (i = 0; i < MAXFNLEN; i++) {
+      512:  123:      cfgvals.msfname[i] = cfgvals.glfname[i] = '\x0';
+        -:  124:   }
+        -:  125:   strcpy(cfgvals.msfname, MSKFILE);
+        -:  126:   strcpy(cfgvals.glfname, GPLFILE);
+        2:  127:   cfgvals.rbtreshold = RBTRESH;
+        2:  128:   cfgvals.neighbsize = NEIGHBS;
+        2:  129:   cfgvals.votes2flip = VOTESFL;
+        2:  130:   cfgvals.azimuth = AZIMUTH;
+        2:  131:   latitude = LATITUD;
+        2:  132:   longitude = LONGITU;
+        2:  133:   elevation = ELEVATI;
+       22:  134:   for (i = 0; i < TZLEN; i++) {
+       20:  135:      timezn[i] = '\x0';
+        -:  136:   }
+        -:  137:   strcpy(timezn, UTCZONE);
+        -:  138:
+        2:  139:   year = 0;
+        2:  140:   month = 0;
+        2:  141:   day = 0;
+        2:  142:   hour = 0;
+        2:  143:   minute = 0;
+        2:  144:   sec = 0;
+        2:  145:   jdn = 0.0;
+        2:  146:   ccindex = 0.0;
+        2:  147:}
+        -:  148:
+        -:  149:/**
+        -:  150: * \brief Verifies if a given file is readable.
+        -:  151: *
+        -:  152: * Given a file name, verifies if such file is readable.
+        -:  153: *
+        -:  154: * @param[in] fname is the file name
+        -:  155: * \return 0 if file cannot be read, 1 otherwise.
+        -:  156: */
+        -:  157:int
+        8:  158:checkFileForRead(char *fname) {
+        -:  159:   struct stat       st;
+        -:  160:   int               status;
+        -:  161:   /* Estado del archivo: existencia (stat != -1), size != 0, archivo regular y
+        -:  162:      permisos de lectura o escritura */
+        -:  163:   status = stat(fname, &st);
+        8:  164:   if ((status == -1) || (st.st_size == 0) ||
+        8:  165:       !S_ISREG(st.st_mode) || !(st.st_mode & S_IRUSR)) {
+        -:  166:      return 0;
+        -:  167:   }
+        -:  168:   else
+        -:  169:      return 1;
+        -:  170:}
+        -:  171:
+        -:  172:/**
+        -:  173: * Expat processing element routine.
+        -:  174: */
+        -:  175:static void       XMLCALL
+       20:  176:procesa(void *data, const char *s, int len) {
+       20:  177:   if (reading) {
+        8:  178:      if (idxrd != 4) {
+        8:  179:         valores[idxrd] = (char *) malloc(len + 1);
+        8:  180:         strncpy(valores[idxrd], s, len);
+        -:  181:      }
+        8:  182:      idxrd++;
+        -:  183:   }
+       20:  184:}
+        -:  185:
+        -:  186:/**
+        -:  187: * Expat start of element routine.
+        -:  188: */
+        -:  189:static void       XMLCALL
+       12:  190:inicio(void *data, const char *el, const char **attr) {
+       12:  191:   if (!strcasecmp(el, TAGMSK)) {
+        2:  192:      reading = 1;
+        2:  193:      idxrd = OFFMSK;
+        -:  194:   }
+       10:  195:   else if (!strcasecmp(el, TAGLOC)) {
+        2:  196:      reading = 1;
+        2:  197:      idxrd = OFFLOC;
+        -:  198:   }
+        8:  199:   else if (!strcasecmp(el, TAGAZI)) {
+        2:  200:      reading = 1;
+        2:  201:      idxrd = OFFAZI;
+        -:  202:   }
+        6:  203:   else if (!strcasecmp(el, TAGTRE)) {
+        2:  204:      reading = 1;
+        2:  205:      idxrd = OFFRBT;
+        -:  206:   }
+        4:  207:   else if (!strcasecmp(el, TAGCON)) {
+        2:  208:      reading = 1;
+        2:  209:      idxrd = OFFNSZ;
+        2:  210:      valores[OFFNSZ] = (char *) malloc(5);
+        2:  211:      valores[OFFVTF] = (char *) malloc(5);
+        2:  212:      strncpy(valores[OFFNSZ], attr[ATTRSZ], 5);
+        2:  213:      strncpy(valores[OFFVTF], attr[ATTRVF], 5);
+        -:  214:   }
+        -:  215:   else {
+        2:  216:      reading = 0;
+        -:  217:   }
+       12:  218:}
+        -:  219:
+        -:  220:/**
+        -:  221: * Expat end of element routine.
+        -:  222: */
+        -:  223:static void       XMLCALL
+       12:  224:fin(void *data, const char *el) {
+       12:  225:   reading = 0;
+       12:  226:}
+        -:  227:
+        -:  228:/**
+        -:  229: * \brief Read the execution parameters from an XML file.
+        -:  230: *
+        -:  231: * Given the name of an XML configuration file, this function reads the
+        -:  232: * execution parameters from such file and validate them (if possible).
+        -:  233: * @param[in] fname is the name of XML file which contain the config values.
+        -:  234: * @param[out] cfgv is the sructure where the config values will be stored.
+        -:  235: * \return 0 if success. An error code otherwise.
+        -:  236: *
+        -:  237: */
+        -:  238:int
+        2:  239:getConfig(char *fname, struct cfgparams *cfgv) {
+        -:  240:   char              Buff[1024];
+        -:  241:   int               len;
+        -:  242:   int               done = 0;
+        -:  243:   char             *endptr;
+        2:  244:   FILE             *file = fopen(fname, "rb");
+        2:  245:   if (file == NULL)
+        -:  246:      return 1;
+        2:  247:   XML_Parser        p = XML_ParserCreate(NULL);
+        2:  248:   if (!p) {
+    #####:  249:      fclose(file);
+        -:  250:      return 2;
+        -:  251:   }
+        -:  252:
+        2:  253:   XML_SetElementHandler(p, inicio, fin);
+        2:  254:   XML_SetCharacterDataHandler(p, procesa);
+        -:  255:   do {
+        2:  256:      len = (int) fread(Buff, 1, 1024, file);
+        2:  257:      if (!len || ferror(file)) {
+    #####:  258:         fclose(file);
+        -:  259:         return 3;
+        -:  260:      }
+        2:  261:      done = feof(file);
+        -:  262:
+        2:  263:      idxrd = 0;
+        2:  264:      if (XML_Parse(p, Buff, len, done) == XML_STATUS_ERROR) {
+    #####:  265:         fclose(file);
+        -:  266:         return 4;
+        -:  267:      }
+        2:  268:   } while (!done);
+        2:  269:   XML_ParserFree(p);
+        2:  270:   strncpy(cfgv->msfname, valores[0], MAXFNLEN);
+        2:  271:   strncpy(cfgv->glfname, valores[1], MAXFNLEN);
+        2:  272:   cfgv->azimuth = strtod(valores[2], &endptr);
+        2:  273:   if (endptr == valores[2]) {
+    #####:  274:      fclose(file);
+        -:  275:      return 5;
+        -:  276:   }
+        2:  277:   if ((cfgv->azimuth < 0.0) || (cfgv->azimuth > 360)) {
+    #####:  278:      fclose(file);
+        -:  279:      return 6;
+        -:  280:   }
+        -:  281:
+        2:  282:   cfgv->rbtreshold = strtod(valores[3], &endptr);
+        2:  283:   if (endptr == valores[3]) {
+    #####:  284:      fclose(file);
+        -:  285:      return 7;
+        -:  286:   }
+        2:  287:   if ((cfgv->rbtreshold < 0.0) || (cfgv->rbtreshold > 1.0)) {
+    #####:  288:      fclose(file);
+        -:  289:      return 8;
+        -:  290:   }
+        -:  291:
+        2:  292:   cfgv->neighbsize = strtod(valores[4], &endptr);
+        2:  293:   if (endptr == valores[4]) {
+    #####:  294:      fclose(file);
+        -:  295:      return 9;
+        -:  296:   }
+        2:  297:   if (cfgv->neighbsize <= 0.0) {
+    #####:  298:      fclose(file);
+        -:  299:      return 10;
+        -:  300:   }
+        -:  301:
+        2:  302:   cfgv->votes2flip = strtod(valores[5], &endptr);
+        2:  303:   if (endptr == valores[5]) {
+    #####:  304:      fclose(file);
+        -:  305:      return 11;
+        -:  306:   }
+        4:  307:   if ((cfgv->votes2flip < 0.0) ||
+        2:  308:       (cfgv->votes2flip > (cfgv->neighbsize) * (cfgv->neighbsize))) {
+    #####:  309:      fclose(file);
+        -:  310:      return 12;
+        -:  311:   }
+        -:  312:
+        2:  313:   fclose(file);
+        -:  314:   /* Validation of mask and geo-location files */
+        2:  315:   if (!checkFileForRead(cfgv->msfname))   /* mask file readable */
+        -:  316:      return 13;
+        2:  317:   if (!checkFileForRead(cfgv->glfname))   /* geo file readable */
+        -:  318:      return 14;
+        -:  319:
+        -:  320:   return 0;
+        -:  321:}
+        -:  322:
+        -:  323:/**
+        -:  324: * \brief Displays a message and terminates program execution.
+        -:  325: *
+        -:  326: * Display in stderr a complete description of program usage, an error
+        -:  327: * message and terminate the program execution with an error code returned
+        -:  328: * to OS.
+        -:  329: * @param[in] prgname is the binary executable program.
+        -:  330: * @param[in] errmsg error message string.
+        -:  331: * @param[in] errcode error code returned to OS.
+        -:  332: */
+        -:  333:void
+    #####:  334:usage(char *prgname, char *errmsg, int errcode) {
+    #####:  335:   fprintf(stderr, "Cloud Cover Index Calculation\n");
+    #####:  336:   fprintf(stderr, "Program to estimate the Cloud Cover Index (CCI).\n");
+    #####:  337:   fprintf(stderr, "A whole sky photograph must be processed.\n");
+    #####:  338:   fprintf(stderr, "This program is Free Software and can be distributed\n");
+    #####:  339:   fprintf(stderr, "under the GNU General Public License.\n\n");
+    #####:  340:   fprintf(stderr, "cloudcover Ver. 1.0, Copyright (C) 2013, José Galaviz,\n");
+    #####:  341:   fprintf(stderr, "Departamento de Matemáticas,\n");
+    #####:  342:   fprintf(stderr, "Facultad de Ciencias,\n");
+    #####:  343:   fprintf(stderr, "Universidad Nacional Autónoma de México\n");
+    #####:  344:   fprintf(stderr, "jgc@fciencias.unam.mx\n\n");
+    #####:  345:   fprintf(stderr, "Usage:\t%s ", prgname);
+    #####:  346:   fprintf(stderr, "-c <XML config file (optional)> ");
+    #####:  347:   fprintf(stderr, "-t <trimmed image file (optional)> ");
+    #####:  348:   fprintf(stderr, "-s <segmented image file (optional)> ");
+    #####:  349:   fprintf(stderr, "<input image file> \n");
+    #####:  350:   fprintf(stderr, "Output (tab separated):\n");
+    #####:  351:   fprintf(stderr, "Year, Month, Date, Hour, Min, Sec, JD, JH, ");
+    #####:  352:   fprintf(stderr, "Lat, Lon, Ele, Azim, RBThr,NSide, Conv, CCI\n");
+    #####:  353:   fprintf(stderr, "JD = Julian Day Number.\n");
+    #####:  354:   fprintf(stderr, "JH = Julian Hour (fraction of the day).\n");
+    #####:  355:   fprintf(stderr, "Ele = Elevation (in meters).\n");
+    #####:  356:   fprintf(stderr, "RBThr = Red/Blue Threshold used to classify.\n");
+    #####:  357:   fprintf(stderr, "NSide = Neighborhood side size used in convolution.\n");
+    #####:  358:   fprintf(stderr, "Conv = Number of votes used to change class.\n");
+    #####:  359:   fprintf(stderr, "CCI = Cloud Cover Index (fraction of sky covered).\n");
+    #####:  360:   fprintf(stderr, "\n%s\n", errmsg);
+    #####:  361:   exit(errcode);
+        -:  362:}
+        -:  363:
+        -:  364:/**
+        -:  365: * \brief Display an error message and terminate program.
+        -:  366: * This function is called after XML parsing.
+        -:  367: * @param[in] c is the error code given by the XML parsing function.
+        -:  368: */
+        -:  369:void
+    #####:  370:diagnostic(int c) {
+    #####:  371:   fprintf(stderr, "XML Configuration file problem\n");
+    #####:  372:   fprintf(stderr, "%s\n", diagmsg[c]);
+    #####:  373:   exit(4);
+        -:  374:}
+        -:  375:
+        -:  376:/**
+        -:  377: * \brief Capture all the command line options.
+        -:  378: * Capture the name of files given in command line and validate them
+        -:  379: * (verify readability).
+        -:  380: * @param[in] na is the original commnd line argument counter.
+        -:  381: * @param[in] la are the command line string.
+        -:  382: * @param[out] confile is the config file name.
+        -:  383: * @param[out] trifile is the trimmed file name.
+        -:  384: * @param[out] segfile is the segmented file name.
+        -:  385: */
+        -:  386:void
+        2:  387:catchParams(int na, char *la[], char **inpfile,
+        -:  388:            char **confile, char **trifile, char **segfile) {
+        -:  389:   char c;
+        -:  390:
+       10:  391:   while ((c = getopt(na, la, "c:t:s:")) != -1) {
+        6:  392:      switch (c) {
+        -:  393:         case 'c':
+        2:  394:            *confile = (char *) malloc(MAXFNLEN);
+        2:  395:            strncpy(*confile, optarg, MAXFNLEN);
+        -:  396:            break;
+        -:  397:         case 't':
+        2:  398:            *trifile = (char *) malloc(MAXFNLEN);
+        2:  399:            strncpy(*trifile, optarg, MAXFNLEN);
+        -:  400:            break;
+        -:  401:         case 's':
+        2:  402:            *segfile = (char *) malloc(MAXFNLEN);
+        2:  403:            strncpy(*segfile, optarg, MAXFNLEN);
+        -:  404:            break;
+        -:  405:      }
+        -:  406:   }
+        2:  407:   if (optind != (na - 1))
+    #####:  408:      usage(la[0], ERR_NARGS, 1);
+        -:  409:   /* Input image file name */
+        2:  410:   *inpfile = (char *) malloc(MAXFNLEN);
+        2:  411:   strncpy(*inpfile, la[optind], MAXFNLEN);
+        -:  412:
+        -:  413:   /* Validate command line arguments */
+        2:  414:   if (!checkFileForRead(*inpfile))  /* input file readable */
+    #####:  415:      usage(la[0], ERR_INFIL, 2);
+        2:  416:   if (!checkFileForRead(*confile))  /* config file readable */
+    #####:  417:      usage(la[0], ERR_CFFIL, 3);
+        2:  418:}
+        -:  419:
+        -:  420:/**
+        -:  421: * \brief Display in, standard error, the values of config params.
+        -:  422: *
+        -:  423: */
+        -:  424:void
+        2:  425:logParams() {
+        2:  426:   fprintf(stderr, "Input: %s|\n", infname);
+        2:  427:   if (cffname != NULL) {
+        2:  428:      fprintf(stderr, "Use config file\n");
+        2:  429:      fprintf(stderr, "Config: %s|\n", cffname);
+        -:  430:   }
+        2:  431:   if (sgfname != NULL) {
+        2:  432:      fprintf(stderr, "Use segmented file\n");
+        2:  433:      fprintf(stderr, "Segmented: %s|\n", sgfname);
+        -:  434:   }
+        2:  435:   if (trfname != NULL) {
+        2:  436:      fprintf(stderr, "Use trimmed file\n");
+        2:  437:      fprintf(stderr, "Trimmed: %s|\n", trfname);
+        -:  438:   }
+        2:  439:   fprintf(stderr, "Mask file: %s\n", cfgvals.msfname);
+        2:  440:   fprintf(stderr, "Geo-location file: %s\n", cfgvals.glfname);
+        2:  441:   fprintf(stderr, "Azimuth: %f\n", cfgvals.azimuth);
+        2:  442:   fprintf(stderr, "R/B Treshold: %f\n", cfgvals.rbtreshold);
+        2:  443:   fprintf(stderr, "Convolution neighborhood side size: %d\n",
+        -:  444:           cfgvals.neighbsize);
+        2:  445:   fprintf(stderr, "Convolution voting treshold: %d\n", cfgvals.votes2flip);
+        2:  446:}
+        -:  447:
+        -:  448:/**
+        -:  449: * \brief Determines the weight factor used for a given pixel.
+        -:  450: *
+        -:  451: * Given the radial distance between some pixel and the image center, this
+        -:  452: * function gets the index that must be used in the factors array to weight
+        -:  453: * that pixel in the pixel counting.
+        -:  454: * @param[in] t target to be search.
+        -:  455: * @param[in] carr is the array where the search must be performed (in our
+        -:  456: * case the categories array must be used.
+        -:  457: * @param[in] low minimum index in the carr array to be used for search
+        -:  458: * (inclusive).
+        -:  459: * @param[in] ipp maximum index in the carr array to be used for search
+        -:  460: * (inclusive).
+        -:  461: * \return the index in the carra array where the first value greater or
+        -:  462: * equal to the given value (t) is stored. This is the index that must be
+        -:  463: * used in the factors array.
+        -:  464: */
+ 11012864:  465:int catsearch(int t, const int carr[], int low, int upp) {
+        -:  466:  int l, u, m;
+ 11012864:  467:  if ((low < upp) && (carr != NULL)) {
+        -:  468:    l = low;
+        -:  469:    u = upp;
+ 68215782:  470:    while (l <= u) {
+ 57203902:  471:      m = (int)((l + u) / 2);
+ 57203902:  472:      if (carr[m] < t) l = m + 1;
+ 32580870:  473:      else if (carr[m] > t) u = m - 1;
+        -:  474:      else return m;
+        -:  475:    }
+ 11011880:  476:    if (l <= upp)
+ 10995990:  477:      return l;
+        -:  478:  }
+        -:  479:  return -1;
+        -:  480:}
+        -:  481:
+        -:  482:/**
+        -:  483: * \brief Read an image from a JPEG file and cuts it to the size of a given
+        -:  484: * mask.
+        -:  485: *
+        -:  486: * Given a mask, whose size is enough to contain, exactly, the interest
+        -:  487: * region of the images, this function reads and crop an original image to
+        -:  488: * get only the interest region.
+        -:  489: *
+        -:  490: * @param[in] fname is the name of the file which contains the original
+        -:  491: * JPEG RGB EXIF image to be processed for the program.
+        -:  492: * @param[in] mskf is the filename of a PNG image which is the mask used to
+        -:  493: * filter only the interest region of the whole original image.
+        -:  494: * @param[out] wd is the width of interest region and, therefore, the width
+        -:  495: * of resulting buffer image returned by the function. It's set from the
+        -:  496: * width of mask.
+        -:  497: * @param[out] hg is the height of interest region and, therefore, the height
+        -:  498: * of resulting buffer image returned by the function. It's set from the
+        -:  499: * height of mask.
+        -:  500: * \return a 2-dimensional buffer with the data of image interest
+        -:  501: * region. The data of pixel in row i, column j of such region is stored as
+        -:  502: * the integer in the position [i][j] of the buffer returned by the
+        -:  503: * function. The most significant byte is the A (alpha) component
+        -:  504: * (transparency) of the pixel, followed by the R (red) component, the next
+        -:  505: * one is the G (green), the least significant bye is the B (blue)
+        -:  506: * component. Thus the integer (hex format) is AARRGGBB.
+        -:  507: */
+        2:  508:unsigned int **readAndCut(char *fname, char *mskf, int *wd, int *hg) {
+        -:  509:   int wm, hm, wi, hi, i, j, mv, mh;
+        2:  510:   unsigned int **img = readJPGImage(fname, &wi, &hi);
+        2:  511:   unsigned int **msk = readPNGImage(mskf, &wm, &hm);
+        2:  512:   unsigned int **res = (unsigned int **) malloc(hm *
+        -:  513:                                                 sizeof(unsigned int *));
+        2:  514:   unsigned int *whole = (unsigned int *) malloc(hm * wm *
+        -:  515:                                                 sizeof(unsigned int));
+     5298:  516:   for (i = 0; i < hm; i++)
+     5296:  517:      res[i] = whole + i * wm;
+        -:  518:
+        2:  519:   mh = (int) ((double)wi - (double)wm) / 2.0;
+        2:  520:   mv = (int) ((double)hi - (double)hm) / 2.0;
+     5298:  521:   for (i = 0; i < hm; i++) {
+ 14023808:  522:      for (j = 0; j < wm; j++) {
+ 14023808:  523:         res[i][j] = msk[i][j] & img[i + mv][j + mh];
+        -:  524:      }
+        -:  525:   }
+        2:  526:   free(img);
+        2:  527:   free(msk);
+        2:  528:   *wd = wm;
+        2:  529:   *hg = hm;
+        2:  530:   return res;
+        -:  531:}
+        -:  532:
+        -:  533:/**
+        -:  534: * \brief Convolution operator to smooth borderline.
+        -:  535: *
+        -:  536: * Given the segmented image, this function smooth the borderline between
+        -:  537: * the two diferent classes.
+        -:  538: * @param[in] sdsz side size of neighborhood. This must be an odd integer.
+        -:  539: * @param[in] mv minimum number of votes in the neighborhood needed to
+        -:  540: * change the central pixel value.
+        -:  541: * @param[in] img is the image to be convolved.
+        -:  542: * @param[in] w image width.
+        -:  543: * @param[in] h image height.
+        -:  544: * \return A new image buffer with the resulting convolved image.
+        -:  545: *
+        -:  546: */
+        2:  547:unsigned int **convolution(int sdsz, int mv,
+        -:  548:                            unsigned int **img, int w, int h ) {
+        2:  549:   int i, j, pelcolor, nesi = (int) ((double)sdsz / 2.0);
+        -:  550:   int  n, m, nv;
+        2:  551:   unsigned int **res = (unsigned int **) malloc(h *
+        -:  552:                                                 sizeof(unsigned int *));
+        2:  553:   unsigned int *whole = (unsigned int *) malloc(h * w *
+        -:  554:                                                 sizeof(unsigned int));
+     5298:  555:   for (i = 0; i < h; i++)
+     5296:  556:      res[i] = whole + i * w;
+        -:  557:
+     5288:  558:   for (i = nesi; i < h - nesi; i++) {
+ 13981472:  559:      for (j = nesi; j < w - nesi; j++) {
+ 13981472:  560:         pelcolor = img[i][j];
+ 13981472:  561:         if (pelcolor == 0X00000000) {
+  2968608:  562:            res[i][j] = 0X00000000;
+        -:  563:         }
+        -:  564:         else {
+        -:  565:            nv = 0;
+ 66077184:  566:            for (n = i - nesi; n <= i + nesi; n++) {
+330385920:  567:               for (m = j - nesi; m <= j + nesi; m++) {
+275321600:  568:                  if ((img[n][m] ^ pelcolor) != 0) {
+  4548314:  569:                     nv++;
+        -:  570:                  }
+        -:  571:               }
+        -:  572:            }
+ 11012864:  573:            if (nv >= mv) res[i][j] = 0XFF000000 | ~pelcolor;
+ 10917232:  574:            else res[i][j] = 0XFF000000 | pelcolor;
+        -:  575:         }
+        -:  576:      }
+        -:  577:   }
+        2:  578:   return res;
+        -:  579:}
+        -:  580:
+        -:  581:/**
+        -:  582: * \brief Classify the image pixels in two different cathegories (sky and
+        -:  583: * cloud).
+        -:  584: *
+        -:  585: * Uses the R/B criteria for pixel classification. If the ratio R/B of
+        -:  586: * pixel is below the threshold the pixel is classified as sky, if is above
+        -:  587: * or equal the threshold, is classified as cloud pixel.
+        -:  588: * @param[in] thr is the threshold used to classify.
+        -:  589: * @param[out] img is the input image.
+        -:  590: * @param[in] wd is the image width.
+        -:  591: * @param[in] hg is the image height.
+        -:  592: * \return the new segmented image. Black opaque pixels = Sky. White opaque
+        -:  593: * pixels = Cloud.
+        -:  594: */
+        2:  595:unsigned int **filterRB(double thr, unsigned int **img, int wd, int hg) {
+        -:  596:   int i, j, pelcolor;
+        -:  597:   double ratio;
+        2:  598:   unsigned int **res = (unsigned int **) malloc(hg *
+        -:  599:                                                 sizeof(unsigned int *));
+        2:  600:   unsigned int *whole = (unsigned int *) malloc(hg * wd *
+        -:  601:                                                 sizeof(unsigned int));
+     5298:  602:   for (i = 0; i < hg; i++)
+     5296:  603:      res[i] = whole + i * wd;
+        -:  604:
+     5296:  605:   for (i = 0; i < wd; i++) {
+ 14023808:  606:      for (j = 0; j < hg; j++) {
+ 14023808:  607:         pelcolor = img[i][j];
+        -:  608:         /*outside region, black and transparent */
+ 14023808:  609:         if ((pelcolor & 0X00FFFFFF) == 0) {
+  3009360:  610:            res[i][j] =  0X00000000;
+        -:  611:         }
+        -:  612:         else { /* inside region */
+        -:  613:            /* take the red chanel value */
+ 11014448:  614:            ratio = (double)((pelcolor & 0X00FF0000) >> 16);
+        -:  615:            /* divide by the blue chanel value */
+ 11014448:  616:            ratio = ratio / (double)(pelcolor & 0X000000FF);
+        -:  617:            /* if ratio is below the threshold */
+ 11014448:  618:            if (ratio < thr) {
+        -:  619:               /* black (but opaque) means sky */
+  7772816:  620:               res[i][j] =  0XFF000000;
+        -:  621:            }
+        -:  622:            else { /* ratio above or equal the threshold */
+        -:  623:               /* white and opaque means cloud */
+  3241632:  624:               res[i][j] = 0XFFFFFFFF;
+        -:  625:            }
+        -:  626:         } /* inside picture */
+        -:  627:      } /* for j */
+        -:  628:   } /* for i */
+        2:  629:   return res;
+        -:  630:}
+        -:  631:
+        -:  632:/**
+        -:  633: * \brief Calculate the Cloud Cover Index.
+        -:  634: *
+        -:  635: * Performs the calculation of CCI (Cloud Cover Index) in the segmentes
+        -:  636: * image. A correction factor is used given that the lens used deforms
+        -:  637: * areas in diferent way according to the radial distance of pixel.
+        -:  638: *
+        -:  639: * @param[in] img is the image where the CCI will be calculated.
+        -:  640: * @param[in] w image width.
+        -:  641: * @param[in] h image height.
+        -:  642: * @param[out] ta is the total weighted area in the image interest
+        -:  643: * region (whole sky area).
+        -:  644: * @param[out] tp total number of pixels in the interest region.
+        -:  645: * \return a double value with the proportion of image covered by clouds,
+        -:  646: * according to the segmented image (white pixels proportion in the
+        -:  647: * interest region)
+        -:  648: */
+        2:  649:double cloudcoverindex(unsigned int **img, int w, int h, double *ta, int *tp) {
+        -:  650:   double total = 0.0, clouds = 0.0;
+        -:  651:   int    pels = 0;
+        -:  652:   double sqdist, rcenter, ccenter;
+        -:  653:   int i, j, pelcolor, idxc;
+        2:  654:   rcenter = (int) ((double) h / 2.0);
+        2:  655:   ccenter = (int) ((double) w / 2.0);
+        -:  656:
+     5298:  657:   for (i = 0; i < h; i++) {
+ 14023808:  658:      for (j = 0; j < w; j++) {
+ 14023808:  659:         pelcolor = img[i][j];
+ 14023808:  660:         if ((pelcolor == 0XFF000000) || (pelcolor == 0XFFFFFFFF)) {
+ 22025728:  661:            sqdist = (i - rcenter) * (i - rcenter) +
+ 11012864:  662:               (j - ccenter) * (j - ccenter);
+ 11012864:  663:            idxc = catsearch(sqdist, categories, 0, NUMCAT - 1);
+ 11012864:  664:            total += factors[idxc];
+ 11012864:  665:            pels++;
+ 11012864:  666:            if (pelcolor == 0XFFFFFFFF) {
+  3239754:  667:               clouds += factors[idxc];
+        -:  668:            }
+        -:  669:         }
+        -:  670:      }
+        -:  671:   }
+        2:  672:   *ta = total;
+        2:  673:   *tp = pels;
+        2:  674:   return clouds / total;
+        -:  675:}
+        -:  676:
+        -:  677:/**
+        -:  678: * \brief Program to estimate the Cloud Cover Index from whole sky
+        -:  679: * photographs.
+        -:  680: *
+        -:  681: * Given a digital picture of whole sky, this program estimate the
+        -:  682: * proportion of sky covered by clouds.
+        -:  683: * The command line parameters:
+        -:  684: * -c <configuration file>
+        -:  685: * -s <segmented image file> (optional)
+        -:  686: * -t <trimmed image file> (optional)
+        -:  687: * -input image file
+        -:  688: *
+        -:  689: * The output is: the segmented and trimmed images (if requested), and the
+        -:  690: * following 15 data values in a text line:
+        -:  691: * year month day hour minute sec juliandate
+        -:  692: * latitude longitude elevation azimuth
+        -:  693: * rbtreshold neighbsize votes2flip
+        -:  694: * ccindex
+        -:  695: *
+        -:  696: * year, month, day, hour, minute, sec and julian date when image was
+        -:  697: * taken.
+        -:  698: * latitude, longitude and elevation of the geographic location where the
+        -:  699: * picture was taken.
+        -:  700: * azimuth refers to the orientation of camera at the moment the picture
+        -:  701: * was taken, 0 means the north is centered at the bottom of image,
+        -:  702: * othewise denotes the clockwise angle in degrees where the north is.
+        -:  703: * rbthreshold is the threshold used to classify the pixels, if the R/B
+        -:  704: * ratio is above this threshold the pixel classified as "cloud".
+        -:  705: * neighbsize and votes2flip are used to regulate the behavior of the
+        -:  706: * convolution operator.
+        -:  707: * ccindex is, finally, the proportion of sky covered by clouds.
+        -:  708: */
+        -:  709:int
+        2:  710:main(int argc, char *argv[]) {
+        -:  711:   int               res;
+        -:  712:   double            totalarea;
+        -:  713:   int               totalpels;
+        -:  714:
+        2:  715:   setDefaults();
+        -:  716:   /*
+        -:  717:      Process command line */
+        2:  718:   if (argc < 2)
+    #####:  719:      usage(argv[0], ERR_NARGS, 1);
+        -:  720:   /* catch all the command line input parameters */
+        2:  721:   catchParams(argc, argv, &infname, &cffname, &trfname, &sgfname);
+        -:  722:   /*  Get the configuration params from xml file */
+        2:  723:   res = getConfig(cffname, &cfgvals);
+        2:  724:   if (res)
+    #####:  725:      diagnostic(res);
+        -:  726:#ifdef DEBUG
+        2:  727:   freopen("CloudCover.log", "w", stderr);
+        2:  728:   logParams();
+        -:  729:#endif
+        -:  730:   /* reading geographic point location info */
+        2:  731:   res = getGeoInfo(cfgvals.glfname, &locinfo);
+        2:  732:   if (res) {
+    #####:  733:      fprintf(stderr, ERR_GINFO);
+    #####:  734:      exit(5);
+        -:  735:   }
+        2:  736:   latitude = locinfo.latitude;
+        2:  737:   longitude = locinfo.longitude;
+        2:  738:   elevation = locinfo.elevation;
+        -:  739:
+        -:  740:   /* reading exif data from image file */
+        2:  741:   res = getImgInfo(infname, cfgvals.azimuth, timezn, &imginfo, &phinfo);
+        2:  742:   if (res != 1) {
+    #####:  743:      fprintf(stderr, ERR_IINFO);
+    #####:  744:      exit(6);
+        -:  745:   }
+        2:  746:   year = imginfo.year;
+        2:  747:   month = imginfo.month;
+        2:  748:   day = imginfo.day;
+        2:  749:   hour = imginfo.UTChr;
+        2:  750:   minute = imginfo.UTCmin;
+        2:  751:   sec = imginfo.UTCsec;
+        2:  752:   jdn = julianDate(year, month, day, hour, minute, (double) sec);
+        -:  753:
+        -:  754:   /* reading and trimming image file */
+        2:  755:   image  = readAndCut(infname, cfgvals.msfname, &width, &height);
+        -:  756:
+        2:  757:   if (trfname != NULL) {
+        2:  758:      res = writePNGImage(image, trfname, width, height);
+        2:  759:      if (res != 1)
+    #####:  760:         fprintf(stderr, ERR_WTFIL);
+        -:  761:      else
+        2:  762:         fprintf(stderr, MSG_WTFIL);
+        -:  763:   }
+        2:  764:   imageseg = filterRB(cfgvals.rbtreshold, image, width, height);
+        2:  765:   imagecnv = convolution(cfgvals.neighbsize, cfgvals.votes2flip,
+        -:  766:                          imageseg, width, height);
+        2:  767:   if (sgfname != NULL) {
+        2:  768:      res = writePNGImage(imagecnv, sgfname, width, height);
+        2:  769:      if (res != 1)
+    #####:  770:         fprintf(stderr, ERR_WSFIL);
+        -:  771:      else
+        2:  772:         fprintf(stderr, MSG_WSFIL);
+        -:  773:   }
+        2:  774:   fprintf(stderr, MSG_CCI1);
+        2:  775:   ccindex = cloudcoverindex(imagecnv, width, height, &totalarea, &totalpels);
+        2:  776:   fprintf(stderr, MSG_CCI2);
+        -:  777:
+        -:  778:   /*
+        -:  779:Year, Month, Date, Hour, Min, Sec, JD,
+        -:  780:%d %d %d %d %d %f %f %f %f %f %f %f %d %d %f\n
+        -:  781:Lat, Lon, Ele, Azim,
+        -:  782:
+        -:  783:RBThr, NSide, Conv, CCI.
+        -:  784:   */
+        2:  785:   printf("%d %d %d %d %d %d %f %f %f %f %f %f %d %d %f\n",
+        -:  786:          year, month, day, hour, minute, sec, jdn,
+        -:  787:          latitude, longitude, elevation, cfgvals.azimuth,
+        -:  788:          cfgvals.rbtreshold, cfgvals.neighbsize, cfgvals.votes2flip, ccindex);
+        -:  789:
+        2:  790:   return 0;
+        -:  791:} /* cloudcover.c ends here */

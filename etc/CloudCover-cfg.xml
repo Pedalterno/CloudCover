@@ -1,0 +1,20 @@
+<?xml version="1.0"  encoding="UTF-8"?>
+<!--
+   CloudCover-cfg.xml
+
+   José Galaviz <jgc@fciencias.unam.mx>
+   June 24, 2013.
+   Facultad de Ciencias,
+   Universidad Nacional Autónoma de México.
+
+   Clound Cover Program
+   Configuration file.
+-->
+<atmrec:configfile xmlns:atmrec="mx.unam.fciencias.AtmRec">
+<MskFile>/usr/share/CloudCover/etc/msk-sqr-png-transp.png</MskFile>
+<LocationFile>/usr/share/CloudCover/etc/Tlahuizcalpan.xml</LocationFile>
+<Azimuth>0.0</Azimuth>
+<RBTreshold>0.95</RBTreshold>
+<Convolution side = "5" votes = "12" />
+</atmrec:configfile>
+<!-- end of CC-cfg.xml -->

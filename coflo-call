@@ -1,0 +1,1 @@
+coflo -DINCLUDEDIR=include -Ifacade-src -Iinclude test-src/test-imageio.c test-src/test-imageinfo.c test-src/test-geoinfo.c test-src/test-timedate.c -O Analysis-html

@@ -1,0 +1,71 @@
+Input Parameters
+
+In the command line
+cf: Configuration file location.
+     Default = CloudCover-cfg.xml in CWD.
+     Option flag "C".
+ifn: Input image file name. The image whose CCI must be calculated.
+     Mandatory. Option flag "I".
+## crop: Flag to request the output of cropped original image.
+##       Default = no cropped image. filename-cut.png.
+## seg: flag to request the output of segmented images.
+##      Default = no segmented image. filename-seg.png.
+
+trimmedfile: Filename for the cropped original image.
+             Default: no trimmed image file.
+             Option flag: "T".
+segmentedfile: Filename for the segmented image file.
+               Default: no segmented image file.
+               Option flag "S".
+
+
+Command line examples:
+
+full options
+cloudcover -c /usr/share/lib/CloudCover/CloudCover-cfg.xml -i /home/clouds/imgs/11836.jpg -t /home/clouds/cut/11836-cut.png -s /home/clouds/seg/11836-seg.png
+
+cloud cover + segmented file only
+cloudcover -c /usr/share/lib/CloudCover/CloudCover-cfg.xml -i /home/clouds/imgs/11836.jpg -s /home/clouds/seg/11836-seg.png
+
+cloud cover + trimmed file only
+cloudcover -c /usr/share/lib/CloudCover/CloudCover-cfg.xml -i /home/clouds/imgs/11836.jpg -t /home/clouds/cut/11836-cut.png
+
+cloud cover only
+cloudcover -c /usr/share/lib/CloudCover/CloudCover-cfg.xml -i /home/clouds/imgs/11836.jpg
+
+In the configuration file
+
+tr: Treshold. Red/Blue threshold used to classify the image pixels. Given
+an image pixel p, if RBRatio(p) < tr then p is classified as "Sky pixel"
+else is classified as "Cloud pixel". Default = 0.95.
+
+ns: Neighborhood side size. Odd positive number whose value is the side
+neighborhood size used in convolution. The neighborhood around a given
+central pixel is ns pixels by side. Default = 5.
+
+vc: Value to change the pixel classification. Given a pixel p previously
+classified as "sky" or "cloud", if its neighborhood have, at least, vc
+pixels in the another class, then the pixel is changed to such class.
+Default = 12.
+
+mskfile: Fully qualified name for the mask file. The mask file is a PNG
+file, four channels (RGB + Transp) with a pure opaque white circle in the
+region in which the image is, and pure transparent black pixels around
+elsewhere. Default = /Images/msk-sqr-png-transp.png
+
+geolocationfile: Fully qualified name for the geographic location file.
+Example: Thahuizcalpan.xml
+
+azimuth: camera orientation clockwise angle, respect to the north.
+
+## croppeddir: directory where the cropped original images will be stored, if
+## requested.
+
+## segmenteddir: directory where the segmented images will be stored, if
+## requested.
+
+Output
+cropped and segmented images if requested
+
+Year, Month, Date, Hour, Min, Sec, JD, JH, Lat, Lon, Ele, Azim, RBThr,
+NSide, Conv, CCI.

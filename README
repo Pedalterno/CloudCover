@@ -1,0 +1,49 @@
+Cloud Cover 1.0
+(october 2012)
+
+José Galaviz
+Department of Mathematics
+School of Sciences,
+Universidad Nacional Autónoma de México.
+jgc@fciencias.unam.mx
+
+Introduction
+
+This program is intended to calculate, based on full-sky photographs,
+the Cloud Cover Index (CCI). It is part of theAtmosferic Exploration
+and Record Project of the School of Sciences of the Universidad
+Nacional Autónoma de México.
+
+The program receives as input:
+A picture of the sky in JPEG format with EXIF data (used by most
+digital cameras).
+An XML file with some configuration parameters.
+An XML file with the camera's accurate geographic location.
+
+As output, the program provides:
+The CCI calculation based on the classification of image pixels.
+The segmented image with pixels classified as sky in black, and white those classified as cloud.
+
+The segmentation algorithm classifies the pixels according to its
+ratio R/B (where R and B are the the red and blue component of pixel
+color, respectively), as described in the paper:
+
+Roy, G., S. Hayman y W. Julian, "Sky analysis from CCD images: cloud
+cover", Lighting Research Technology, Vol. 33, No. 4, pp. 211-222,
+2001.
+
+The input pictures are 4368 pixels width and 2912 pixels height. Since
+the camera uses a special lens, the sky is completely contained in a
+central circle with a radius of 1324 pixels. These images are JPEG
+RGB, 8 bits depth in each component.
+
+The program has been writen in C and uses the following libraries:
+
+libjpeg version 8c (/usr/lib/i386-linux-gnu/libjpeg.so.8.0.2)
+libpng version 1.2.46 (/usr/lib/i386-linux-gnu/libpng12.so)
+libexif version 12.3.2 (/usr/lib/i386-linux-gnu/libexif.so.12.3.2)
+libexpat version 1.5.2 (/usr/lib/i386-linux-gnu/libexpatw.so.1.5.2)
+
+The date and time calculations are based in the ANSI C code of the
+SOFA library, provided by the International Astronomical Union
+(http://www.iausofa.org/current_C.html).

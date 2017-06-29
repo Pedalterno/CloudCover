@@ -1,0 +1,50 @@
+84 a\
+<center><b>Cloud Cover 1.0</b></center>\
+<center><b>(october 2012)</b></center>\
+<center><b><i>José Galaviz</i></b></center>\
+<center><b>Department of Mathematics</b></center>\
+<center><b>School of Sciences,</b></center>\
+<center><b>Universidad Nacional Autónoma de México.</b></center>\
+<center><b><tt>jgc@fciencias.unam.mx</tt></b></center>\
+<div align="justify">\
+<b>Introduction</b>\
+<p>\
+This program is intended to calculate, based on full-sky photographs, the Cloud Cover Index (CCI). It is part of theAtmosferic Exploration and Record Project of the School of Sciences of the Universidad Nacional Autónoma de México.\
+</p>\
+<p>\
+The program receives as input:\
+</p>\
+<UL>\
+<LI>A picture of the sky in JPEG format with EXIF data (used by most digital cameras).</LI>\
+<LI>An XML file with some configuration parameters.</LI>\
+<LI>An XML file with the camera's accurate geographic location.</LI>\
+</UL>\
+<p>\
+As output, the program provides:\
+</p>\
+<UL>\
+<LI>The CCI calculation based on the classification of image pixels.</LI>\
+<LI>The segmented image with pixels classified as sky in black, and white those classified as cloud.</LI>\
+</UL>\
+<p>\
+The segmentation algorithm classifies the pixels according to its ratio R/B (where R and B are the the red and blue component of pixel color, respectively), as described in the paper:\
+</p>\
+<p>\
+Roy, G., S. Hayman y W. Julian, "Sky analysis from CCD images: cloud cover", <i>Lighting Research Technology</i>, Vol. 33, No. 4, pp. 211-222, 2001.\
+</p>\
+<p>\
+The input pictures are 4368 pixels width and 2912 pixels height. Since the camera uses a special lens, the sky is completely contained in a central circle with a radius of 1324 pixels. These images are JPEG RGB, 8 bits depth in each component.\
+</p>\
+<p>\
+The program has been writen in C and uses the following libraries:\
+</p>\
+<UL>\
+<LI>libjpeg version 8c (/usr/lib/i386-linux-gnu/libjpeg.so.8.0.2)</LI>\
+<LI>libpng version 1.2.46 (/usr/lib/i386-linux-gnu/libpng12.so)</LI>\
+<LI>libexif version 12.3.2 (/usr/lib/i386-linux-gnu/libexif.so.12.3.2)</LI>\
+<LI>libexpat version 1.5.2 (/usr/lib/i386-linux-gnu/libexpatw.so.1.5.2)</LI>\
+</UL>\
+<p>\
+The date and time calculations are based in the ANSI C code of the SOFA library, provided by the International Astronomical Union (http://www.iausofa.org/current_C.html).\
+</p>\
+</div>
